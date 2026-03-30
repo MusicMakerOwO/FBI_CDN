@@ -1,0 +1,20 @@
+# CDN Assets
+Files/
+
+# IDE Files
+.idea/
+.vscode/
+
+# Database files
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Logs
+Logs/
+
+# Dependencies
+node_modules/
+
+# Enviorment Variables
+.env
