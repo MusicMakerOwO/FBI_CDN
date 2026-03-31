@@ -18,3 +18,7 @@ node_modules/
 
 # Enviorment Variables
 .env
+
+# TypeScript
+build/
+tsconfig.tsbuildinfo

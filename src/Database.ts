@@ -1,12 +1,12 @@
-const fs = require('node:fs');
-const BetterSqlite3 = require('better-sqlite3');
-const { DB_SETUP_FILE, DB_FILE, ROOT_FOLDER } = require('./Constants.js');
+import { DB_FILE, DB_SETUP_FILE } from "./Constants";
+import { readFileSync } from "node:fs";
+import BetterSqlite3 from "better-sqlite3";
 
-function ParseQueries(fileContent) {
-	const queries = [];
+function ParseQueries(fileContent: string) {
+	const queries: string[] = [];
 	let buffer = '';
 	let inMultilineComment = false;
-	let insubQuery = false;
+	let inSubQuery = false;
 
 	const lines = fileContent.split('\n');
 	for (let i = 0; i < lines.length; i++) {
@@ -26,16 +26,16 @@ function ParseQueries(fileContent) {
 		}
 
 		if (line.includes('BEGIN')) {
-			insubQuery = true;
+			inSubQuery = true;
 		}
 
 		if (line.includes('END')) {
-			insubQuery = false;
+			inSubQuery = false;
 		}
 
 		buffer += line + '\n';
 
-		if (line.endsWith(';') && !insubQuery) {
+		if (line.endsWith(';') && !inSubQuery) {
 			queries.push(buffer.trim());
 			buffer = '';
 		} else {
@@ -51,22 +51,9 @@ function ParseQueries(fileContent) {
 	return queries;
 }
 
-const FileContent = fs.readFileSync(DB_SETUP_FILE, 'utf8');
-
-const NoComments = FileContent.replace(/\-\-.*\n/g, '');
-
-const MACROS = {
-	ROOT_FOLDER: ROOT_FOLDER,
-	NOW: "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
-};
-
-const WithMacros = NoComments.replace(/{{(.*?)}}/g, (match, macro) => {
-	if (MACROS[macro]) return MACROS[macro];
-	console.error(`Unknown macro: ${macro}`);
-	return match;
-});
-
-const DBQueries = ParseQueries(WithMacros);
+const FileContent = readFileSync(DB_SETUP_FILE, 'utf8');
+const NoComments = FileContent.replace(/--.*\n/g, '');
+const DBQueries = ParseQueries(NoComments);
 
 const Database = new BetterSqlite3(DB_FILE);
 
@@ -86,4 +73,4 @@ for (let i = 0; i < DBQueries.length; i++) {
 	}
 }
 
-module.exports = Database;
+export { Database };
