@@ -66,12 +66,12 @@ app.post('/upload', async function (req, res) {
 		typeof downloadCount !== 'string'
 	) return res.status(400).send('Invalid request');
 
-	if ( ! downloadCount.match(/^\d+$/) ) return res.status(400).send('Invalid request');
+	if ( downloadCount !== 'null' && !downloadCount.match(/^\d+$/) ) return res.status(400).send('Invalid request');
 
 	const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
 	if (data.length > MAX_UPLOAD_SIZE) return res.status(413).send('File too large');
 
-	const lookup = await AddFile(fileName, parseInt(downloadCount), data);
+	const lookup = await AddFile(fileName, downloadCount === 'null' ? null : parseInt(downloadCount), data);
 	res.status(200).send(lookup);
 });
 
