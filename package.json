@@ -17,6 +17,7 @@
 		"build": "echo \"Checking for errors ...\" && tsc --noEmit && echo \"Deleting old data ...\" && rm -rf build && echo \"Compiling scripts ...\" && tsc -b tsconfig.json",
 		"build:go": "echo \"Checking for errors ...\" && tsgo --noEmit && echo \"Deleting old data ...\" && rm -rf build && echo \"Compiling scripts ...\" && tsgo -b",
 		"start": "node build/index.js",
+		"port": "node build/port.js",
 		"linecount": "find . -type f -name '*.ts' -not -path './node_modules/*' -exec wc -l {} + | sort -n -r | head -n 10",
 		"test": "vitest run"
 	},

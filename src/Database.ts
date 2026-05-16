@@ -1,76 +1,85 @@
-import { DB_FILE, DB_SETUP_FILE } from "./Constants";
-import { readFileSync } from "node:fs";
-import BetterSqlite3 from "better-sqlite3";
+import {createPool, Pool, PoolConnection} from "mariadb";
+import {Log} from "./Log";
 
-function ParseQueries(fileContent: string) {
-	const queries: string[] = [];
-	let buffer = '';
-	let inMultilineComment = false;
-	let inSubQuery = false;
+const connection_warning = new WeakMap(); // Connection => timeoutID
+const connection_location = new WeakMap(); // Connection => stack trace
 
-	const lines = fileContent.split('\n');
-	for (let i = 0; i < lines.length; i++) {
-		let line = lines[i].trim();
+class DatabaseWrapper {
+	connection_pool: Pool | undefined;
 
-		if (line.startsWith('--')) continue;
+	async Initialize() {
+		if (this.connection_pool) return;
 
-		if (line.startsWith('/*')) {
-			inMultilineComment = true;
+		if (!process.env.MARIADB_URI) {
+			console.log('[!] Missing MARIADB_URI environment variable');
+			process.exit(1);
 		}
 
-		if (inMultilineComment) {
-			if (line.endsWith('*/')) {
-				inMultilineComment = false;
-			}
-			continue;
-		}
+		this.connection_pool = createPool(process.env.MARIADB_URI);
+	}
 
-		if (line.includes('BEGIN')) {
-			inSubQuery = true;
-		}
+	async getConnection() {
+		await this.Initialize();
 
-		if (line.includes('END')) {
-			inSubQuery = false;
-		}
+		const connection = await this.connection_pool!.getConnection();
+		const timeoutID = setTimeout(() => {
+			const stack = connection_location.get(connection);
+			Log('ERROR', `A database connection has been checked out for over 10 seconds. Did you forget to release it?${stack ? '\n' + stack : ''}`);
+		}, 10_000);
+		connection_warning.set(connection, timeoutID);
+		connection_location.set(connection, new Error().stack!.split('\n').slice(1).join('\n'));
+		return connection;
+	}
 
-		buffer += line + '\n';
+	releaseConnection(connection: PoolConnection) {
+		// no await because we don't care about the result
+		void connection.release();
 
-		if (line.endsWith(';') && !inSubQuery) {
-			queries.push(buffer.trim());
-			buffer = '';
-		} else {
-			buffer += ' ';
+		clearTimeout( connection_warning.get(connection) );
+		connection_warning.delete(connection);
+	}
+
+	async query(sql: string, params: unknown[] = []) {
+		await this.Initialize();
+
+		const connection = await this.connection_pool!.getConnection();
+		try {
+			return await connection.query(sql, params);
+		} finally {
+			Database.releaseConnection(connection);
 		}
 	}
 
-	// Check if there's any remaining content in the buffer (for cases where the file might not end with a semicolon)
-	if (buffer.trim()) {
-		queries.push(buffer.trim());
+	async batch(sql: string, paramsArray: unknown[][] = [[]]) {
+		await this.Initialize();
+
+		const connection = await this.connection_pool!.getConnection();
+		try {
+			await connection.batch(sql, paramsArray);
+		} finally {
+			Database.releaseConnection(connection);
+		}
 	}
 
-	return queries;
+	async transaction(callback: (connection: PoolConnection) => Promise<void>) {
+		await this.Initialize();
+
+		const connection = await this.connection_pool!.getConnection();
+		try {
+			await connection.beginTransaction();
+			await callback(connection);
+			await connection.commit();
+		} catch (error) {
+			await connection.rollback();
+			throw error;
+		} finally {
+			Database.releaseConnection(connection);
+		}
+	}
+
+	async destroy() {
+		if (this.connection_pool) await this.connection_pool.end();
+	}
 }
 
-const FileContent = readFileSync(DB_SETUP_FILE, 'utf8');
-const NoComments = FileContent.replace(/--.*\n/g, '');
-const DBQueries = ParseQueries(NoComments);
-
-const Database = new BetterSqlite3(DB_FILE);
-
-Database.pragma('foreign_keys = OFF'); // Faster inserts but data integrity across tables is manual
-Database.pragma('journal_mode = WAL');
-Database.pragma('cache_size = 50000');  // ~200MB cache
-Database.pragma('temp_store = MEMORY'); // Use memory for temporary tables
-Database.pragma('mmap_size = 268435456'); // 256MB memory map
-
-for (let i = 0; i < DBQueries.length; i++) {
-	try {
-		Database.exec( DBQueries[i] );
-	} catch (error) {
-		console.error( DBQueries[i] );
-		console.error(error);
-		process.exit(1);
-	}
-}
-
-export { Database };
+export const Database = new DatabaseWrapper();

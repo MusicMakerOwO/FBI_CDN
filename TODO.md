@@ -1,0 +1,4 @@
+- [x] Update database from SQLite to MariaDB
+- [x] Switch from local files to S3
+  - Credentials can be found on `fbi-cdn` on Cloudflare R2 bucket
+  - Interface via `@aws-sdk/client-s3` library

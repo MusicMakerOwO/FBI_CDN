@@ -2,7 +2,7 @@ import { Database } from "./Database";
 import { FILES_FOLDER } from "./Constants";
 import express from "express";
 import { Log } from "./Log";
-import { AddFile, GetFile } from "./FileManagement";
+import { AddFile, GetFile } from "./LocalFileManagement";
 import mime from "mime-types";
 
 import * as dotenv from "dotenv";
@@ -27,7 +27,7 @@ app.use((req, res, next) => {
 });
 
 // It's not very efficient but can prevent against timing attacks
-function SecureStringTest(a = '', b = '') {
+function SecureStringTest(a: string, b: string) {
 	if (a.length !== b.length) return false;
 
 	let result = 0;
@@ -57,28 +57,24 @@ const MAX_UPLOAD_SIZE = 1024 * 1024 * 100; // 100MB
 
 app.post('/upload', async function (req, res) {
 	const key = req.headers['key'] ?? '';
-	if ( typeof key !== 'string' || !SecureStringTest(key, process.env.ACCESS_KEY) ) return res.status(401).send('Unauthorized');
+	if ( typeof key !== 'string' || !SecureStringTest(key, process.env.ACCESS_KEY!) ) return res.status(401).send('Unauthorized');
 
 	const fileName = req.headers['file-name'];
-	const downloadCount = req.headers['download-limit'];
 	if (
-		typeof fileName !== 'string' ||
-		typeof downloadCount !== 'string'
+		typeof fileName !== 'string'
 	) return res.status(400).send('Invalid request');
-
-	if ( downloadCount !== 'null' && !downloadCount.match(/^\d+$/) ) return res.status(400).send('Invalid request');
 
 	const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
 	if (data.length > MAX_UPLOAD_SIZE) return res.status(413).send('File too large');
 
-	const lookup = await AddFile(fileName, downloadCount === 'null' ? null : parseInt(downloadCount), data);
+	const lookup = await AddFile(fileName, data);
 	res.status(200).send(lookup);
 });
 
 // cdn.notfbi.dev/fetch/<lookup>
 app.get('/fetch/:lookup', async function (req, res) {
 	const lookup = req.params.lookup.replace(/\..*/, '');
-	const data = await GetFile(lookup, true);
+	const data = await GetFile(lookup);
 	if (!data) {
 		res.status(404).send('Not found');
 	} else {
@@ -91,7 +87,7 @@ app.get('/fetch/:lookup', async function (req, res) {
 // cdn.notfbi.dev/download/<lookup>
 app.get('/download/:lookup', async function (req, res) {
 	const lookup = req.params.lookup.replace(/\..*/, '');
-	const data = await GetFile(lookup, true);
+	const data = await GetFile(lookup);
 	if (!data) {
 		res.status(404).send('Not found');
 	} else {
@@ -111,10 +107,7 @@ process.on('SIGINT', () => {
 	server.close();
 
 	Log('WARN', 'Optimising database...');
-	Database.pragma('analysis_limit = 8000');
-	Database.exec('ANALYZE'); // Optimise the database and add indecies
-	Database.exec('VACUUM'); // Clear dead space to reduce file size
-	Database.close();
+	Database.destroy().catch(console.error);
 
 	process.exit(0);
 });
